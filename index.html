@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Семейная Корзинка</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-4 pb-24 text-gray-800">
+
+  <!-- Шапка и Поиск -->
+  <div class="sticky top-0 bg-gray-100 pt-2 pb-4 z-10">
+    <h1 class="text-xl font-bold mb-3 text-center text-red-600">🛒 Семейный Заказ</h1>
+    <input type="text" id="searchInput" placeholder="Поиск товаров (например, молоко)..." 
+           class="w-full p-3 rounded-xl border border-gray-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500">
+  </div>
+
+  <!-- Список товаров -->
+  <div id="productsList" class="grid grid-cols-2 gap-3 mt-2">
+    <p class="col-span-2 text-center text-gray-400 py-10">Введите название товара в поиске выше...</p>
+  </div>
+
+  <!-- Плавающая кнопка оформления -->
+  <div class="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-lg">
+    <button id="sendBtn" class="w-full bg-red-600 text-white font-bold py-3 rounded-xl shadow hover:bg-red-700 transition hidden" onclick="sendOrder()">
+      Оформить заказ (<span id="totalPrice">0</span> сум)
+    </button>
+  </div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.expand(); // Разворачиваем на весь экран
+
+    let cart = {}; // Хранение корзины { id: { name, price, count } }
+
+    const searchInput = document.getElementById('searchInput');
+    const productsList = document.getElementById('productsList');
+    const sendBtn = document.getElementById('sendBtn');
+    const totalPriceEl = document.getElementById('totalPrice');
+
+    // Поиск при вводе
+    let timer;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(fetchProducts, 500);
+    });
+
+    async function fetchProducts() {
+      const q = searchInput.value.trim();
+      if (!q) return;
+
+      productsList.innerHTML = '<p class="col-span-2 text-center text-gray-400">Ищем товары...</p>';
+
+      try {
+        const res = await fetch(`https://api.korzinka.uz/search/?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        renderProducts(data);
+      } catch (err) {
+        productsList.innerHTML = '<p class="col-span-2 text-center text-red-500">Ошибка загрузки</p>';
+      }
+    }
+
+    function renderProducts(data) {
+      productsList.innerHTML = '';
+      
+      // Адаптируй под ключи из твоего API (например, data.products или data.items)
+      const items = Array.isArray(data) ? data : (data.products || data.items || []);
+
+      if (items.length === 0) {
+        productsList.innerHTML = '<p class="col-span-2 text-center text-gray-400">Ничего не найдено</p>';
+        return;
+      }
+
+      items.forEach(item => {
+        const id = item.id || item.code;
+        const title = item.title || item.name || 'Товар';
+        const price = item.price || 0;
+        const img = item.image || item.photo || 'https://via.placeholder.com/150';
+
+        const card = document.createElement('div');
+        card.className = "bg-white p-3 rounded-xl shadow flex flex-col justify-between";
+        card.innerHTML = `
+          <img src="${img}" class="w-full h-28 object-contain mb-2 rounded">
+          <div class="font-medium text-sm line-clamp-2">${title}</div>
+          <div class="text-red-600 font-bold my-2">${price.toLocaleString()} сум</div>
+          <button onclick="addToCart('${id}', '${title.replace(/'/g, "")}', ${price})" 
+                  class="bg-red-100 text-red-600 font-semibold py-1.5 rounded-lg text-sm hover:bg-red-200">
+            + В корзину
+          </button>
+        `;
+        productsList.appendChild(card);
+      });
+    }
+
+    function addToCart(id, name, price) {
+      if (cart[id]) {
+        cart[id].count += 1;
+      } else {
+        cart[id] = { name, price, count: 1 };
+      }
+      updateCartUI();
+    }
+
+    function updateCartUI() {
+      let total = 0;
+      let count = 0;
+      for (const key in cart) {
+        total += cart[key].price * cart[key].count;
+        count += cart[key].count;
+      }
+
+      totalPriceEl.innerText = total.toLocaleString();
+      if (count > 0) {
+        sendBtn.classList.remove('hidden');
+      } else {
+        sendBtn.classList.add('hidden');
+      }
+    }
+
+    function sendOrder() {
+      // Отправляем собранный заказ боту
+      tg.sendData(JSON.stringify(cart));
+    }
+  </script>
+</body>
+</html>
