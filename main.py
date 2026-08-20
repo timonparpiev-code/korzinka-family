@@ -8,7 +8,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-WEB_APP_URL = "https://timonparpiev-code.github.io/korzinka-family/?v=4"
+WEB_APP_URL = "https://timonparpiev-code.github.io/korzinka-family/?v=100"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
