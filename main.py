@@ -8,8 +8,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# СЮДА ВСТАВЬ СВОЮ ССЫЛКУ С GITHUB PAGES (из вкладки Pages)
-WEB_APP_URL = "WEB_APP_URL = "https://timonparpiev-code.github.io/korzinka-family/?v=2""
+WEB_APP_URL = "https://timonparpiev-code.github.io/korzinka-family/?v=3"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
