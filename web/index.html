@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Корзинка</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { --kz-red: #E4002B; }
+  body { -webkit-tap-highlight-color: transparent; }
+  ::-webkit-scrollbar { display: none; }
+  .cat-pill.active { background: var(--kz-red); color: #fff; }
+  .line-clamp-2 {
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .skeleton { background: linear-gradient(90deg,#eee 25%,#f5f5f5 37%,#eee 63%); background-size: 400% 100%; animation: sk 1.4s ease infinite; }
+  @keyframes sk { 0%{background-position:100% 50%} 100%{background-position:0 50%} }
+  .modal-enter { animation: slideUp .25s ease-out; }
+  @keyframes slideUp { from{transform:translateY(30px); opacity:0} to{transform:translateY(0); opacity:1} }
+</style>
+</head>
+<body class="bg-gray-100 text-gray-800 pb-28">
+
+  <!-- Шапка -->
+  <div class="sticky top-0 z-20 bg-white shadow-sm">
+    <div class="px-4 pt-3 pb-2 flex items-center gap-2">
+      <span class="text-xl">🛒</span>
+      <h1 class="text-lg font-bold" style="color:var(--kz-red)">Корзинка</h1>
+    </div>
+    <div class="px-4 pb-3">
+      <input id="searchInput" type="text" placeholder="Найти товар..."
+             class="w-full p-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:ring-2"
+             style="--tw-ring-color:var(--kz-red)">
+    </div>
+    <div id="catTabs" class="flex gap-2 overflow-x-auto px-4 pb-3 no-scrollbar"></div>
+  </div>
+
+  <!-- Сетка товаров -->
+  <div id="productsGrid" class="grid grid-cols-2 gap-3 p-4"></div>
+  <p id="emptyState" class="hidden text-center text-gray-400 py-16">Ничего не найдено 🤷</p>
+
+  <!-- Нижняя панель корзины -->
+  <div id="cartBar" class="fixed bottom-0 left-0 right-0 p-3 bg-white border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] hidden">
+    <button onclick="sendOrder()" class="w-full text-white font-bold py-3 rounded-xl flex items-center justify-between px-5"
+            style="background:var(--kz-red)">
+      <span id="cartCount">0 товара</span>
+      <span id="cartTotal">0 сум</span>
+    </button>
+  </div>
+
+  <!-- Модалка карточки товара -->
+  <div id="productModal" class="hidden fixed inset-0 z-30 bg-black/40 flex items-end">
+    <div class="modal-enter bg-white w-full rounded-t-2xl max-h-[85vh] overflow-y-auto">
+      <div class="p-4">
+        <div class="flex justify-end">
+          <button onclick="closeModal()" class="text-gray-400 text-2xl leading-none">&times;</button>
+        </div>
+        <img id="modalImg" class="w-full h-56 object-contain rounded-xl bg-gray-50" src="" alt="">
+        <div id="modalDiscount" class="hidden inline-block mt-3 text-xs font-bold text-white px-2 py-1 rounded-md" style="background:var(--kz-red)"></div>
+        <h2 id="modalTitle" class="font-semibold text-base mt-2"></h2>
+        <p id="modalWeight" class="text-gray-400 text-sm mt-1"></p>
+        <div class="flex items-baseline gap-2 mt-3">
+          <span id="modalPrice" class="text-2xl font-bold" style="color:var(--kz-red)"></span>
+          <span id="modalOldPrice" class="text-gray-400 line-through text-sm"></span>
+        </div>
+        <button id="modalAddBtn" onclick="addFromModal()"
+                class="w-full mt-5 text-white font-bold py-3 rounded-xl" style="background:var(--kz-red)">
+          Добавить в корзину
+        </button>
+      </div>
+    </div>
+  </div>
+
+<script>
+const tg = window.Telegram.WebApp;
+tg.expand();
+tg.ready();
+
+let allCategories = [];
+let currentCategoryId = null;
+let currentProducts = [];
+let cart = JSON.parse(sessionStorage.getItem('kz_cart') || '{}');
+let activeProduct = null;
+let searchTimer = null;
+
+const grid = document.getElementById('productsGrid');
+const catTabs = document.getElementById('catTabs');
+const emptyState = document.getElementById('emptyState');
+
+function fmt(n) {
+  return (n || 0).toLocaleString('ru-RU');
+}
+
+async function loadCategories() {
+  const res = await fetch('/api/categories');
+  allCategories = await res.json();
+  renderTabs();
+  if (allCategories.length) {
+    currentCategoryId = allCategories[0].id;
+    loadProducts();
+  }
+}
+
+function renderTabs() {
+  catTabs.innerHTML = allCategories.map(c => `
+    <button data-id="${c.id}" onclick="selectCategory(${c.id})"
+      class="cat-pill whitespace-nowrap px-3 py-1.5 rounded-full text-sm bg-gray-100 text-gray-600 ${c.id === currentCategoryId ? 'active' : ''}">
+      ${c.title}
+    </button>
+  `).join('');
+}
+
+function selectCategory(id) {
+  currentCategoryId = id;
+  document.getElementById('searchInput').value = '';
+  [...catTabs.children].forEach(btn => {
+    btn.classList.toggle('active', Number(btn.dataset.id) === id);
+  });
+  loadProducts();
+}
+
+async function loadProducts(query = '') {
+  grid.innerHTML = Array.from({length: 6}).map(() => `
+    <div class="bg-white rounded-xl p-3">
+      <div class="skeleton w-full h-28 rounded-lg mb-2"></div>
+      <div class="skeleton h-3 w-3/4 rounded mb-1"></div>
+      <div class="skeleton h-3 w-1/2 rounded"></div>
+    </div>
+  `).join('');
+  emptyState.classList.add('hidden');
+
+  const params = new URLSearchParams();
+  if (query) {
+    params.set('q', query);
+  } else if (currentCategoryId) {
+    params.set('category_id', currentCategoryId);
+  }
+
+  try {
+    const res = await fetch('/api/products?' + params.toString());
+    currentProducts = await res.json();
+    renderProducts();
+  } catch (e) {
+    grid.innerHTML = '<p class="col-span-2 text-center text-red-500 py-10">Ошибка загрузки. Проверь соединение.</p>';
+  }
+}
+
+function renderProducts() {
+  if (!currentProducts.length) {
+    grid.innerHTML = '';
+    emptyState.classList.remove('hidden');
+    return;
+  }
+  emptyState.classList.add('hidden');
+  grid.innerHTML = currentProducts.map(p => `
+    <div class="bg-white rounded-xl p-3 flex flex-col">
+      <div onclick='openModal(${JSON.stringify(p)})' class="cursor-pointer">
+        <img src="${p.image}" class="w-full h-28 object-contain mb-2 rounded-lg bg-gray-50" loading="lazy">
+        <div class="font-medium text-sm line-clamp-2 min-h-[2.5rem]">${p.title}</div>
+        <div class="text-xs text-gray-400 mt-1">${p.weight || ''}</div>
+      </div>
+      <div class="flex items-center justify-between mt-2">
+        <div>
+          <div class="font-bold" style="color:var(--kz-red)">${fmt(p.price)} <span class="text-xs font-normal">сум</span></div>
+          ${p.is_discount ? `<div class="text-xs text-gray-400 line-through">${fmt(p.old_price)}</div>` : ''}
+        </div>
+        ${cartControlsHtml(p)}
+      </div>
+    </div>
+  `).join('');
+}
+
+function cartControlsHtml(p) {
+  const inCart = cart[p.id];
+  if (!inCart) {
+    return `<button onclick='addToCart(${JSON.stringify(p)})' class="w-8 h-8 rounded-full text-white font-bold text-lg leading-none" style="background:var(--kz-red)">+</button>`;
+  }
+  return `
+    <div class="flex items-center gap-1 bg-gray-100 rounded-full px-1">
+      <button onclick="changeQty(${p.id}, -1)" class="w-6 h-6 text-sm font-bold" style="color:var(--kz-red)">−</button>
+      <span class="text-sm w-4 text-center">${inCart.count}</span>
+      <button onclick="changeQty(${p.id}, 1)" class="w-6 h-6 text-sm font-bold" style="color:var(--kz-red)">+</button>
+    </div>
+  `;
+}
+
+function addToCart(p) {
+  cart[p.id] = { name: p.title, price: p.price, count: 1, image: p.image };
+  persistCart();
+  renderProducts();
+  updateCartBar();
+}
+
+function changeQty(id, delta) {
+  if (!cart[id]) return;
+  cart[id].count += delta;
+  if (cart[id].count <= 0) delete cart[id];
+  persistCart();
+  renderProducts();
+  updateCartBar();
+}
+
+function persistCart() {
+  sessionStorage.setItem('kz_cart', JSON.stringify(cart));
+}
+
+function updateCartBar() {
+  const items = Object.values(cart);
+  const totalCount = items.reduce((s, i) => s + i.count, 0);
+  const totalPrice = items.reduce((s, i) => s + i.count * i.price, 0);
+  const bar = document.getElementById('cartBar');
+  if (totalCount > 0) {
+    bar.classList.remove('hidden');
+    document.getElementById('cartCount').innerText = `${totalCount} товар(а)`;
+    document.getElementById('cartTotal').innerText = fmt(totalPrice) + ' сум';
+  } else {
+    bar.classList.add('hidden');
+  }
+}
+
+function openModal(p) {
+  activeProduct = p;
+  document.getElementById('modalImg').src = p.image;
+  document.getElementById('modalTitle').innerText = p.title;
+  document.getElementById('modalWeight').innerText = p.weight || '';
+  document.getElementById('modalPrice').innerText = fmt(p.price) + ' сум';
+  const oldPriceEl = document.getElementById('modalOldPrice');
+  const discountEl = document.getElementById('modalDiscount');
+  if (p.is_discount) {
+    oldPriceEl.innerText = fmt(p.old_price) + ' сум';
+    oldPriceEl.classList.remove('hidden');
+    discountEl.innerText = p.discount_label || 'Скидка';
+    discountEl.classList.remove('hidden');
+  } else {
+    oldPriceEl.classList.add('hidden');
+    discountEl.classList.add('hidden');
+  }
+  document.getElementById('productModal').classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('productModal').classList.add('hidden');
+  activeProduct = null;
+}
+
+function addFromModal() {
+  if (activeProduct) {
+    addToCart(activeProduct);
+    closeModal();
+  }
+}
+
+function sendOrder() {
+  if (Object.keys(cart).length === 0) return;
+  tg.sendData(JSON.stringify(cart));
+}
+
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  clearTimeout(searchTimer);
+  const val = e.target.value.trim();
+  searchTimer = setTimeout(() => loadProducts(val), 400);
+});
+
+updateCartBar();
+loadCategories();
+</script>
+</body>
+</html>
