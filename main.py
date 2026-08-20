@@ -87,6 +87,7 @@ async def fetch_catalog() -> list[dict]:
                 "weight": p.get("weight_param") or "",
                 "image": p.get("small_image_url") or "",
                 "category_id": section.get("id"),
+                "url": p.get("product_url") or "",
             })
         if not products:
             continue
@@ -145,9 +146,22 @@ async def handle_webapp_order(message: types.Message):
         total += subtotal
         lines.append(f"• {item['name']} × {item['count']} — {subtotal:,} сум".replace(",", " "))
     lines.append(f"\n<b>Итого: {total:,} сум</b>".replace(",", " "))
+    lines.append(
+        "\nСвоей доставки и оплаты у бота нет — жми на кнопки ниже, "
+        "чтобы открыть каждый товар в приложении Корзинки и оформить покупку там."
+    )
 
     text = "\n".join(lines)
-    await message.answer(text, parse_mode="HTML")
+
+    # Кнопки-ссылки на каждый товар в приложении Korzinka Go
+    buttons = []
+    for item in cart.values():
+        url = item.get("url")
+        if url:
+            buttons.append([types.InlineKeyboardButton(text=f"🔗 {item['name'][:40]}", url=url)])
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None
+
+    await message.answer(text, parse_mode="HTML", reply_markup=keyboard)
 
     if ADMIN_CHAT_ID:
         try:
