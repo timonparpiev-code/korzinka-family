@@ -3,125 +3,110 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Семейная Корзинка</title>
+  <title>Korzinka Family</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f4f5f7; margin: 0; padding: 15px; color: #222; }
+    .header { text-align: center; font-weight: bold; font-size: 22px; color: #e53935; margin-bottom: 15px; }
+    input { width: 100%; padding: 14px; border: 1px solid #ddd; border-radius: 12px; font-size: 16px; box-sizing: border-box; margin-bottom: 15px; outline: none; background: #fff; }
+    .item { background: #fff; padding: 14px; border-radius: 12px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+    .item-info strong { font-size: 16px; }
+    .item-info small { color: #777; font-size: 14px; }
+    .btn { background: #e53935; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+    .btn:active { transform: scale(0.95); }
+    .cart-bar { position: fixed; bottom: 15px; left: 15px; right: 15px; background: #2e7d32; color: white; padding: 16px; border-radius: 14px; text-align: center; font-weight: bold; font-size: 16px; display: none; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+  </style>
 </head>
-<body class="bg-gray-100 p-4 pb-24 text-gray-800">
+<body>
 
-  <!-- Шапка и Поиск -->
-  <div class="sticky top-0 bg-gray-100 pt-2 pb-4 z-10">
-    <h1 class="text-xl font-bold mb-3 text-center text-red-600">🛒 Семейный Заказ</h1>
-    <input type="text" id="searchInput" placeholder="Поиск товаров (например, молоко)..." 
-           class="w-full p-3 rounded-xl border border-gray-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500">
-  </div>
-
-  <!-- Список товаров -->
-  <div id="productsList" class="grid grid-cols-2 gap-3 mt-2">
-    <p class="col-span-2 text-center text-gray-400 py-10">Введите название товара в поиске выше...</p>
-  </div>
-
-  <!-- Плавающая кнопка оформления -->
-  <div class="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-lg">
-    <button id="sendBtn" class="w-full bg-red-600 text-white font-bold py-3 rounded-xl shadow hover:bg-red-700 transition hidden" onclick="sendOrder()">
-      Оформить заказ (<span id="totalPrice">0</span> сум)
-    </button>
-  </div>
+  <div class="header">🛒 Семейный Заказ</div>
+  <input type="text" id="searchInput" placeholder="Поиск товара (молоко, хлеб...)" oninput="filterItems()">
+  
+  <div id="itemList"></div>
+  
+  <div id="cartBar" class="cart-bar" onclick="sendOrder()">Отправить заказ в чат</div>
 
   <script>
     const tg = window.Telegram.WebApp;
-    tg.expand(); // Разворачиваем на весь экран
+    tg.expand();
 
-    let cart = {}; // Хранение корзины { id: { name, price, count } }
+    // Базовый каталог товаров Корзинки
+    const products = [
+      { id: 1, name: "Молоко 3.2%", price: 12000 },
+      { id: 2, name: "Хлеб формовой", price: 3000 },
+      { id: 3, name: "Яйца C1 (10 шт)", price: 16000 },
+      { id: 4, name: "Масло сливочное", price: 28000 },
+      { id: 5, name: "Сахар 1 кг", price: 14000 },
+      { id: 6, name: "Колбаса вареная", price: 42000 },
+      { id: 7, name: "Сыр Гауда 200г", price: 31000 },
+      { id: 8, name: "Вода 1.5л", price: 3500 },
+      { id: 9, name: "Бананы 1 кг", price: 22000 },
+      { id: 10, name: "Яблоки 1 кг", price: 15000 }
+    ];
 
-    const searchInput = document.getElementById('searchInput');
-    const productsList = document.getElementById('productsList');
-    const sendBtn = document.getElementById('sendBtn');
-    const totalPriceEl = document.getElementById('totalPrice');
+    let cart = {};
 
-    // Поиск при вводе
-    let timer;
-    searchInput.addEventListener('input', () => {
-      clearTimeout(timer);
-      timer = setTimeout(fetchProducts, 500);
-    });
-
-    async function fetchProducts() {
-      const q = searchInput.value.trim();
-      if (!q) return;
-
-      productsList.innerHTML = '<p class="col-span-2 text-center text-gray-400">Ищем товары...</p>';
-
-      try {
-        const res = await fetch(`https://api.korzinka.uz/search/?q=${encodeURIComponent(q)}`);
-        const data = await res.json();
-        renderProducts(data);
-      } catch (err) {
-        productsList.innerHTML = '<p class="col-span-2 text-center text-red-500">Ошибка загрузки</p>';
-      }
-    }
-
-    function renderProducts(data) {
-      productsList.innerHTML = '';
+    function renderProducts(list) {
+      const container = document.getElementById('itemList');
+      container.innerHTML = '';
       
-      // Адаптируй под ключи из твоего API (например, data.products или data.items)
-      const items = Array.isArray(data) ? data : (data.products || data.items || []);
-
-      if (items.length === 0) {
-        productsList.innerHTML = '<p class="col-span-2 text-center text-gray-400">Ничего не найдено</p>';
+      if (list.length === 0) {
+        container.innerHTML = '<p style="text-align:center; color:#888; margin-top:20px;">Товар не найден</p>';
         return;
       }
 
-      items.forEach(item => {
-        const id = item.id || item.code;
-        const title = item.title || item.name || 'Товар';
-        const price = item.price || 0;
-        const img = item.image || item.photo || 'https://via.placeholder.com/150';
-
-        const card = document.createElement('div');
-        card.className = "bg-white p-3 rounded-xl shadow flex flex-col justify-between";
-        card.innerHTML = `
-          <img src="${img}" class="w-full h-28 object-contain mb-2 rounded">
-          <div class="font-medium text-sm line-clamp-2">${title}</div>
-          <div class="text-red-600 font-bold my-2">${price.toLocaleString()} сум</div>
-          <button onclick="addToCart('${id}', '${title.replace(/'/g, "")}', ${price})" 
-                  class="bg-red-100 text-red-600 font-semibold py-1.5 rounded-lg text-sm hover:bg-red-200">
-            + В корзину
+      list.forEach(p => {
+        const count = cart[p.id] ? cart[p.id].count : 0;
+        const div = document.createElement('div');
+        div.className = 'item';
+        div.innerHTML = `
+          <div class="item-info">
+            <strong>${p.name}</strong><br>
+            <small>${p.price.toLocaleString()} сум</small>
+          </div>
+          <button class="btn" onclick="addToCart(${p.id}, '${p.name}', ${p.price})">
+            ${count > 0 ? '✓ В корзине (' + count + ')' : '+ Добавить'}
           </button>
         `;
-        productsList.appendChild(card);
+        container.appendChild(div);
       });
     }
 
-    function addToCart(id, name, price) {
-      if (cart[id]) {
-        cart[id].count += 1;
-      } else {
-        cart[id] = { name, price, count: 1 };
-      }
-      updateCartUI();
+    function filterItems() {
+      const query = document.getElementById('searchInput').value.toLowerCase();
+      const filtered = products.filter(p => p.name.toLowerCase().includes(query));
+      renderProducts(filtered);
     }
 
-    function updateCartUI() {
-      let total = 0;
-      let count = 0;
-      for (const key in cart) {
-        total += cart[key].price * cart[key].count;
-        count += cart[key].count;
-      }
-
-      totalPriceEl.innerText = total.toLocaleString();
-      if (count > 0) {
-        sendBtn.classList.remove('hidden');
+    function addToCart(id, name, price) {
+      if (!cart[id]) {
+        cart[id] = { name, price, count: 1 };
       } else {
-        sendBtn.classList.add('hidden');
+        cart[id].count++;
+      }
+      updateCartBar();
+      filterItems();
+    }
+
+    function updateCartBar() {
+      const cartBar = document.getElementById('cartBar');
+      const totalItems = Object.values(cart).reduce((a, b) => a + b.count, 0);
+      let totalSum = 0;
+      Object.values(cart).forEach(item => totalSum += item.price * item.count);
+
+      if (totalItems > 0) {
+        cartBar.style.display = 'block';
+        cartBar.innerText = `Отправить заказ (${totalItems}) • ${totalSum.toLocaleString()} сум`;
+      } else {
+        cartBar.style.display = 'none';
       }
     }
 
     function sendOrder() {
-      // Отправляем собранный заказ боту
       tg.sendData(JSON.stringify(cart));
     }
+
+    renderProducts(products);
   </script>
 </body>
 </html>
