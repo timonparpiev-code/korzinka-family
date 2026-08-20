@@ -186,7 +186,7 @@ function cartControlsHtml(p) {
 }
 
 function addToCart(p) {
-  cart[p.id] = { name: p.title, price: p.price, count: 1, image: p.image };
+  cart[p.id] = { name: p.title, price: p.price, count: 1, image: p.image, url: p.url || '' };
   persistCart();
   renderProducts();
   updateCartBar();
